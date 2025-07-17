@@ -134,8 +134,8 @@ def get_pathology_slide_set(raven_query_config: RavenQueryParameters) -> Set[str
 ############################
 # Featurization CLI
 ############################
-# @click.command()
-# @click.option('--config-uri', required=True, help='S3 URI to a pipeline configuration YAML file')
+@click.command()
+@click.option('--config-uri', required=True, help='S3 URI to a pipeline configuration YAML file')
 def featurize(config_uri: str):
     """
     Loads the pipeline config YAML from S3 and runs the featurization pipeline.
@@ -198,7 +198,7 @@ def featurize(config_uri: str):
 
 
 
-if __name__ == "__main__":
-    featurize(
-        config_uri='s3://px-app-bucket/config/eng-test.yaml'
-    )
+# if __name__ == "__main__":
+#     featurize(
+#         config_uri='s3://px-app-bucket/config/eng-test.yaml'
+#     )
