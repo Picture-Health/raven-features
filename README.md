@@ -112,9 +112,10 @@ This will:
 ## 📁 Directory Structure
 
 ```
-px-pipeline/
-├── cli.py                      # CLI entrypoint
-├── driver.py                   # ClearML pipeline driver
+raven-features/
+├── raven_features/
+    ├── cli.py                  # CLI entrypoint
+    ├── driver.py               # ClearML pipeline driver
 ├── utils/
     ├── aws.py                  # S3 helper functions
     ├── config.py               # Pydantic model + helpers for YAML config
