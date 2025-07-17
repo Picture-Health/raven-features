@@ -184,8 +184,6 @@ def featurize(config_uri: str):
     # Step 4: Trigger pipelines
     logger.info("🚀 Launching featurization pipelines...")
 
-    # TODO: REMOVE TRIGGER SET TRUNCATION AFTER TESTING
-    trigger_set = set(list(trigger_set)[:5])
     for set_item in trigger_set:
         launch_pipeline(
             config_name=config_title,
