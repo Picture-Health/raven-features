@@ -5,12 +5,12 @@ setup(
     version="0.0.1",
     packages=find_packages(),
     install_requires=[
+        "click",
         "clearml",
         "boto3",
-        "pandas",
-        "numpy",
-        "python-dotenv",
-        "gitpython"
+        "email-validator",
+        "pydantic",
+        "raven"
     ],
     entry_points={
         # Defines CLI commands that map to specific functions within the project.
