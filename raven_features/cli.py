@@ -3,18 +3,19 @@ import raven as rv
 
 from clearml import PipelineController, Task
 from datetime import datetime
-from typing import Set
+from pathlib import Path
+from typing import Set, Optional
 
-from utils.aws import load_config_yaml_from_s3
-from utils.config import (
+from raven_features.utils.config import (
+    load_config,
+    log_pipeline_config_to_clearml,
     PipelineConfig,
     RavenQueryParameters,
-    log_pipeline_config_to_clearml
 )
-from utils.params import build_clearml_params
-from utils.logs import get_logger
-from utils.time import formatted_date
-from utils import env
+from raven_features.utils.clearml import build_clearml_params
+from raven_features.utils.logs import get_logger
+from raven_features.utils.time import formatted_date
+from raven_features.utils import env
 
 
 ############################
@@ -87,41 +88,26 @@ def get_radiology_series_set(raven_query_config: RavenQueryParameters) -> Set[st
     Returns:
         Set[str]: A set of Series UIDs for which both organ and lesion masks are available.
     """
-    query_dict = raven_query_config.model_dump()
+    # Dump and filter query dict
+    base_query = {
+        k: v for k, v in raven_query_config.model_dump().items()
+        if k not in {"modality", "images", "masks"} and v is not None
+    }
 
-    # Unpack query values that do not directly translate to Raven
-    _ = query_dict.pop('modality')
-    organ_mask_type = query_dict.pop('organ_mask_type')
-    organ_mask_provenance = query_dict.pop('organ_mask_provenance')
-    lesion_mask_type = query_dict.pop('lesion_mask_type')
-    lesion_mask_provenance = query_dict.pop('lesion_mask_provenance')
-
-    # Remove any remaining NoneTypes
-    query_dict = {k: v for k, v in query_dict.items() if v is not None}
-
-    # Construct valid Raven query for organ masks
-    query_dict['mask_type'] = organ_mask_type
-    query_dict['provenance'] = organ_mask_provenance
-    organ_mask_list = rv.get_masks(**query_dict)
-    organ_mask_series_uids = {mask.series_uid for mask in organ_mask_list}
-
-    # Construct valid Raven query for lesion masks
-    query_dict['mask_type'] = lesion_mask_type
-    query_dict['provenance'] = lesion_mask_provenance
-    lesion_mask_list = rv.get_masks(**query_dict)
-    lesion_mask_series_uids = {mask.series_uid for mask in lesion_mask_list}
-
-    # Compute intersection
-    series_intersection = organ_mask_series_uids & lesion_mask_series_uids
+    # Query and intersect all mask matches
+    series_intersection = set.intersection(*[
+        {mask.series_uid for mask in rv.get_masks(**{**base_query, **mask_query.model_dump()})}
+        for mask_query in raven_query_config.masks
+    ])
 
     # Log results
     logger.info('--------------------------------------------------')
-    logger.info(f"Found ({len(series_intersection)} series with requested organ and lesion masks):")
+    logger.info(f"Found ({len(series_intersection)} series at the intersection of the specified mask queries):")
     for uid in sorted(series_intersection):
         logger.info(f"  Series UID: {uid}")
     logger.info('--------------------------------------------------')
 
-    return series_intersection
+    return list(series_intersection)[:5]
 
 
 
@@ -135,56 +121,57 @@ def get_pathology_slide_set(raven_query_config: RavenQueryParameters) -> Set[str
 # Featurization CLI
 ############################
 @click.command()
-@click.option('--config-uri', required=True, help='S3 URI to a pipeline configuration YAML file')
-def featurize(config_uri: str):
+@click.option('--config-uri', default=None, help='S3 URI to a pipeline configuration YAML file')
+@click.option('--config-local-path', default=None, type=click.Path(exists=True), help='Local path to a pipeline configuration YAML file')
+def featurize(config_uri, config_local_path):
     """
-    Loads the pipeline config YAML from S3 and runs the featurization pipeline.
+    Loads the pipeline config from either S3 or local path and runs the featurization pipeline.
     """
-    batch_id = datetime.now().strftime("%Y-%m-%d__%H-%M-%S")
-    config_filename = config_uri.split('/')[-1]
-    config_title = config_filename.split('.')[0]
+    # Step 1: Validate mutually exclusive CLI options
+    if bool(config_uri) == bool(config_local_path):
+        raise click.UsageError("You must provide exactly one of --config-uri or --config-local-path.")
 
-    # Step 1: Initiate ClearML task
+    # Step 2: Load config
+    config_path = config_uri or config_local_path
+    config_dict, yaml_content = load_config(config_path)
+    config_title = Path(config_path).stem
+    batch_id = datetime.now().strftime("%Y-%m-%d__%H-%M-%S")
+
+    # Step 3: Initialize ClearML
     task = Task.init(
         project_name=env.PROJECT_PREFIX,
         task_name=f"Featurization - {config_title} @ {formatted_date()}",
         task_type=Task.TaskTypes.data_processing
     )
-
-    task.set_parameter("config_uri", config_uri)
-
-    # Step 2: Load and validate pipeline config
-    logger.info(f"📥 Loading pipeline config from: {config_uri}")
-    config_dict, yaml_content = load_config_yaml_from_s3(config_uri)
+    task.set_parameter("config_path", config_path)
 
     config_obj = PipelineConfig.model_validate(config_dict)
-
-    # Log structured config parameters to ClearML and upload raw YAML as an artifact
     log_pipeline_config_to_clearml(task, config_obj)
     task.upload_artifact(name="config_yaml", artifact_object=yaml_content)
 
-
-    # Step 3: Query Raven
+    # Step 4: Query Raven
     logger.info("🔎 Performing Raven query...")
 
-    modality = config_obj.raven_query_parameters.modality
-    if modality == 'radiology':
-        trigger_set = get_radiology_series_set(config_obj.raven_query_parameters)
-    elif modality == 'pathology':
-        trigger_set = get_pathology_slide_set(config_obj.raven_query_parameters)
-    else:
-        logger.info(f"⚠️ Modality {modality} is not currently supported in Raven. Aborting procedure.")
+    modality_dispatch = {
+        'radiology': get_radiology_series_set,
+        'pathology': get_pathology_slide_set,
+    }
+
+    try:
+        trigger_set = modality_dispatch[config_obj.raven_query_parameters.modality](
+            config_obj.raven_query_parameters
+        )
+    except KeyError:
+        logger.info(f"⚠️ Modality '{config_obj.raven_query_parameters.modality}' is not supported. Aborting.")
         return
 
     if not trigger_set:
         logger.info("⚠️ No pipelines to launch. Aborting procedure.")
         return
 
-
-    # Step 4: Trigger pipelines
+    # Step 5: Trigger pipelines
     logger.info("🚀 Launching featurization pipelines...")
 
-    
     for set_item in trigger_set:
         launch_pipeline(
             config_name=config_title,
@@ -199,5 +186,6 @@ def featurize(config_uri: str):
 
 # if __name__ == "__main__":
 #     featurize(
-#         config_uri='s3://px-app-bucket/config/eng-test.yaml'
+#         config_uri=None, #'s3://px-app-bucket/config/eng-test.yaml',
+#         config_local_path='../config/eng-test-lung.yaml'
 #     )

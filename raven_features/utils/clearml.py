@@ -1,6 +1,6 @@
 import json
 from typing import Dict, Any
-from utils.config import flatten_model, unflatten_config, PipelineConfig
+from raven_features.utils.config import flatten_config, unflatten_config, PipelineConfig
 
 
 def build_clearml_params(
@@ -13,7 +13,7 @@ def build_clearml_params(
     Build a ClearML-compatible parameter dict with flattened, intuitive keys.
     Removes nested 'config.' prefix and avoids namespacing like 'Pipeline/'.
     """
-    flat_config = flatten_model(config)  # No prefix here
+    flat_config = flatten_config(config)  # No prefix here
 
     params = {
         "config_name": config_name,

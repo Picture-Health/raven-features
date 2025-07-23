@@ -1,10 +1,14 @@
 import ast
+import yaml
 
 from clearml import Task
+from io import StringIO
 from pydantic import BaseModel, EmailStr, field_validator, model_validator
-from typing import Any, List, Optional, Literal
+from typing import Any, List, Optional, Literal, Union
 
-from utils.logs import get_logger
+from raven_features.utils.aws import retrieve_s3_file
+from raven_features.utils.filesystem import retrieve_local_file
+from raven_features.utils.logs import get_logger
 
 
 # ----------------------------
@@ -32,19 +36,27 @@ class AutoscalerParameters(BaseModel):
 # ----------------------------
 # RAVEN QUERY PARAMETERS MODEL
 # ----------------------------
+
+class ImageParameters(BaseModel):
+    provenance: str
+
+
+class MaskParameters(BaseModel):
+    mask_type: str
+    provenance: str
+
+
 class RavenQueryParameters(BaseModel):
     modality: Literal["radiology", "pathology"]
 
     # Universal query parameters
-    dataset_id: Optional[str] = None
+    dataset_id: Optional[Union[str, List[str]]] = None
     clinical_id: Optional[str] = None
     ingestion_id: Optional[str] = None
 
-    # Radiology query parameters
-    organ_mask_type: Optional[str] = None
-    organ_mask_provenance: Optional[str] = None
-    lesion_mask_type: Optional[str] = None
-    lesion_mask_provenance: Optional[str] = None
+    # New flexible image & mask parameters
+    images: Optional[ImageParameters] = None
+    masks: Optional[List[MaskParameters]] = None
 
     @model_validator(mode="after")
     def at_least_one_id(cls, model: "RavenQueryParameters"):
@@ -83,7 +95,7 @@ class PipelineConfig(BaseModel):
     config_name: Optional[str] = None
     batch_id: Optional[str] = None
     series_uid: Optional[str] = None
-    
+
     project_parameters: ProjectParameters
     autoscaler_parameters: AutoscalerParameters
     raven_query_parameters: RavenQueryParameters
@@ -98,9 +110,33 @@ class PipelineConfig(BaseModel):
 
 
 # ----------------------------
-# Helper Functions
+# Config Retrieval Functions
 # ----------------------------
-def flatten_model(model: BaseModel, prefix: str = "") -> dict[str, Any]:
+def process_config_yaml(yaml_content: str) -> dict:
+    """
+    Parses a YAML string and returns the corresponding dictionary.
+    """
+    return yaml.safe_load(StringIO(yaml_content))
+
+def load_config(config_path_or_uri: str) -> tuple[dict, str]:
+    """
+    General-purpose loader that handles both S3 and local config files.
+
+    Returns:
+        Tuple of (parsed_dict, raw_yaml_string)
+    """
+    if config_path_or_uri.startswith("s3://"):
+        yaml_content = retrieve_s3_file(config_path_or_uri)
+    else:
+        yaml_content = retrieve_local_file(config_path_or_uri)
+
+    config_dict = process_config_yaml(yaml_content)
+    return config_dict, yaml_content
+
+# ----------------------------
+# Model Manipulation Functions
+# ----------------------------
+def flatten_config(model: BaseModel, prefix: str = "") -> dict[str, Any]:
     """
     Recursively flattens nested Pydantic models into a flat dictionary with dot-notated keys.
     Lists of models are flattened with index-based keys (e.g., steps.0.name).
@@ -111,12 +147,12 @@ def flatten_model(model: BaseModel, prefix: str = "") -> dict[str, Any]:
         key = f"{prefix}.{name}" if prefix else name
 
         if isinstance(value, BaseModel):
-            flat.update(flatten_model(value, prefix=key))
+            flat.update(flatten_config(value, prefix=key))
 
         elif isinstance(value, list):
             if all(isinstance(i, BaseModel) for i in value):
                 for idx, item in enumerate(value):
-                    flat.update(flatten_model(item, prefix=f"{key}.{idx}"))
+                    flat.update(flatten_config(item, prefix=f"{key}.{idx}"))
             else:
                 flat[key] = value  # Let non-BaseModel lists pass through
 
@@ -163,6 +199,9 @@ def unflatten_config(
     return model_class.model_validate(nested)
 
 
+# ----------------------------
+# Config Logging Functions
+# ----------------------------
 def log_model_parameters(task, model: BaseModel, section_name: str = None):
     """
     Logs all fields from a Pydantic model to the ClearML task parameters.
@@ -172,7 +211,7 @@ def log_model_parameters(task, model: BaseModel, section_name: str = None):
         model: A Pydantic BaseModel instance.
         section_name: Optional section prefix to group parameters.
     """
-    flat_params = flatten_model(model)
+    flat_params = flatten_config(model)
     param_prefix = f"{section_name or model.__class__.__name__}."
 
     for k, v in flat_params.items():

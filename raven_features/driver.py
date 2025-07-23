@@ -10,10 +10,10 @@ This script is triggered by a parent job and is responsible for:
 from clearml import PipelineController, Task
 from datetime import datetime, timezone
 
-from utils.config import PipelineStep
-from utils.params import parse_clearml_params, build_clearml_params
-from utils.logs import get_logger
-from utils import env
+from raven_features.utils.config import PipelineStep
+from raven_features.utils.clearml import parse_clearml_params, build_clearml_params
+from raven_features.utils.logs import get_logger
+from raven_features.utils import env
 
 
 ############################
