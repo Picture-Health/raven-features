@@ -184,6 +184,7 @@ def featurize(config_uri: str):
     # Step 4: Trigger pipelines
     logger.info("🚀 Launching featurization pipelines...")
 
+    
     for set_item in trigger_set:
         launch_pipeline(
             config_name=config_title,

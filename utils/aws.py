@@ -3,6 +3,7 @@ import yaml
 
 from io import StringIO
 
+
 def load_config_yaml_from_s3(s3_uri: str) -> tuple[dict, str]:
     """
     Loads and parses a YAML file from the given S3 URI.

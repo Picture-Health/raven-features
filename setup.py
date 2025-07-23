@@ -10,7 +10,7 @@ setup(
         "boto3",
         "email-validator",
         "pydantic",
-        "raven"
+        "raven @ git+https://github.com/Picture-Health/raven.git"
     ],
     entry_points={
         # Defines CLI commands that map to specific functions within the project.
