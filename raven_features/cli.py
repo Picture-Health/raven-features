@@ -1,18 +1,14 @@
 import click
-import raven as rv
 
 from clearml import PipelineController, Task
-from datetime import datetime
-from pathlib import Path
-from typing import Set, Optional
 
 from raven_features.utils.config import (
     load_config,
-    log_pipeline_config_to_clearml,
+    set_task_parameters_from_config,
+    log_pipeline_config_to_console,
     PipelineConfig,
-    RavenQueryParameters,
 )
-from raven_features.utils.clearml import build_clearml_params
+from raven_features.utils.query import get_radiology_series_set, get_pathology_slide_set
 from raven_features.utils.logs import get_logger
 from raven_features.utils.time import formatted_date
 from raven_features.utils import env
@@ -27,21 +23,16 @@ logger = get_logger(__name__)
 ############################
 # Pipeline Launcher
 ############################
-def launch_pipeline(
-    config_name: str,
-    batch_id: str,
-    series_uid: str,
-    config: PipelineConfig,
-) -> dict:
+def launch_pipeline(config: PipelineConfig) -> dict:
     """
     Launch a ClearML pipeline task for a given series_uid.
     """
-    logger.info(f"   🚀 Creating pipeline task for {series_uid}")
+    logger.info(f"   🚀 Creating pipeline task for {config.series_uid}")
 
-    # Create pipeline task
+    # Create pipeline controller task
     pipeline = PipelineController.create(
         project_name="/".join([env.PROJECT_PREFIX, config.project_parameters.project_id]),
-        task_name="-".join([config_name, batch_id]),
+        task_name="-".join([config.config_name, config.batch_id]),
         repo=env.ENTRYPOINT_REPO,
         branch=env.ENTRYPOINT_BRANCH,
         script=env.ENTRYPOINT_SCRIPT,
@@ -50,22 +41,17 @@ def launch_pipeline(
         add_run_number=True,
     )
 
-    # Connect task parameters to pipeline
-    params = build_clearml_params(
-        config=config,
-        config_name=config_name,
-        batch_id=batch_id,
-        series_uid=series_uid
-    )
-
-    pipeline.task.connect(params)
-
-    # Set user and system tags
+    # Set parameters, tags and config artifact to pipeline controller task
+    set_task_parameters_from_config(pipeline.task, config)
     pipeline.task.set_tags([
         f"project_id:{config.project_parameters.project_id}",
-        f"job_id:{series_uid}",
+        f"job_id:{config.series_uid}",
     ])
     pipeline.task.set_system_tags((pipeline.task.get_system_tags() or []) + ["pipeline"])
+    pipeline.task.upload_artifact(
+        name=env.CONFIG_ARTIFACT_NAME,
+        artifact_object=config.yaml_content
+    )
 
     # Enqueue the task
     Task.enqueue(
@@ -74,47 +60,6 @@ def launch_pipeline(
     )
 
     return {"message": "Pipeline task created successfully"}
-
-
-def get_radiology_series_set(raven_query_config: RavenQueryParameters) -> Set[str]:
-    """
-    Queries Raven for organ and lesion segmentation masks based on the provided configuration,
-    and returns the set of Series UIDs that have both types of masks available.
-
-    Args:
-        raven_query_config (RavenQueryParameters): A validated configuration object specifying
-            the query parameters for retrieving segmentation masks.
-
-    Returns:
-        Set[str]: A set of Series UIDs for which both organ and lesion masks are available.
-    """
-    # Dump and filter query dict
-    base_query = {
-        k: v for k, v in raven_query_config.model_dump().items()
-        if k not in {"modality", "images", "masks"} and v is not None
-    }
-
-    # Query and intersect all mask matches
-    series_intersection = set.intersection(*[
-        {mask.series_uid for mask in rv.get_masks(**{**base_query, **mask_query.model_dump()})}
-        for mask_query in raven_query_config.masks
-    ])
-
-    # Log results
-    logger.info('--------------------------------------------------')
-    logger.info(f"Found ({len(series_intersection)} series at the intersection of the specified mask queries):")
-    for uid in sorted(series_intersection):
-        logger.info(f"  Series UID: {uid}")
-    logger.info('--------------------------------------------------')
-
-    return list(series_intersection)[:5]
-
-
-
-def get_pathology_slide_set(raven_query_config: RavenQueryParameters) -> Set[str]:
-
-    return {'fake', 'path', 'set'}
-
 
 
 ############################
@@ -131,38 +76,40 @@ def featurize(config_uri, config_local_path):
     if bool(config_uri) == bool(config_local_path):
         raise click.UsageError("You must provide exactly one of --config-uri or --config-local-path.")
 
-    # Step 2: Load config
-    config_path = config_uri or config_local_path
-    config_dict, yaml_content = load_config(config_path)
-    config_title = Path(config_path).stem
-    batch_id = datetime.now().strftime("%Y-%m-%d__%H-%M-%S")
+    # Step 2: Call load_config with correct keyword argument
+    config = load_config(
+        config_uri=config_uri if config_uri else None,
+        config_path=config_local_path if config_local_path else None
+    )
 
     # Step 3: Initialize ClearML
     task = Task.init(
         project_name=env.PROJECT_PREFIX,
-        task_name=f"Featurization - {config_title} @ {formatted_date()}",
+        task_name=f"Featurization - {config.config_name} @ {formatted_date()}",
         task_type=Task.TaskTypes.data_processing
     )
-    task.set_parameter("config_path", config_path)
+    set_task_parameters_from_config(task, config)
+    task.upload_artifact(
+        name=env.CONFIG_ARTIFACT_NAME,
+        artifact_object=config.yaml_content
+    )
 
-    config_obj = PipelineConfig.model_validate(config_dict)
-    log_pipeline_config_to_clearml(task, config_obj)
-    task.upload_artifact(name="config_yaml", artifact_object=yaml_content)
+    # Step 4: Log the fully loaded task
+    log_pipeline_config_to_console(config)
 
-    # Step 4: Query Raven
+    # Step 5: Query Raven
     logger.info("🔎 Performing Raven query...")
-
     modality_dispatch = {
         'radiology': get_radiology_series_set,
         'pathology': get_pathology_slide_set,
     }
 
     try:
-        trigger_set = modality_dispatch[config_obj.raven_query_parameters.modality](
-            config_obj.raven_query_parameters
+        trigger_set = modality_dispatch[config.raven_query_parameters.modality](
+            config.raven_query_parameters
         )
     except KeyError:
-        logger.info(f"⚠️ Modality '{config_obj.raven_query_parameters.modality}' is not supported. Aborting.")
+        logger.info(f"⚠️ Modality '{config.raven_query_parameters.modality}' is not supported. Aborting.")
         return
 
     if not trigger_set:
@@ -171,21 +118,18 @@ def featurize(config_uri, config_local_path):
 
     # Step 5: Trigger pipelines
     logger.info("🚀 Launching featurization pipelines...")
-
-    for set_item in trigger_set:
-        launch_pipeline(
-            config_name=config_title,
-            batch_id=batch_id,
-            series_uid=set_item,
-            config=config_obj
-        )
-
+    debug_counter = 0
+    for series_uid in trigger_set:
+        if debug_counter < 3:
+            config.series_uid = series_uid
+            launch_pipeline(config=config)
+            debug_counter += 1
     logger.info("✅ Featurization pipelines successfully triggered.")
 
 
 
-# if __name__ == "__main__":
-#     featurize(
-#         config_uri=None, #'s3://px-app-bucket/config/eng-test.yaml',
-#         config_local_path='../config/eng-test-lung.yaml'
-#     )
+if __name__ == "__main__":
+    featurize(
+        config_uri=None, #'s3://px-app-bucket/config/eng-test.yaml',
+        config_local_path='../config/eng-test-lung.yaml'
+    )

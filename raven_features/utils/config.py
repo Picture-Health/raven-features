@@ -1,13 +1,15 @@
-import ast
 import yaml
 
 from clearml import Task
+from datetime import datetime
 from io import StringIO
-from pydantic import BaseModel, EmailStr, field_validator, model_validator
-from typing import Any, List, Optional, Literal, Union
+from pathlib import Path
+from typing import Optional
+from urllib.parse import urlparse
 
 from raven_features.utils.aws import retrieve_s3_file
 from raven_features.utils.filesystem import retrieve_local_file
+from raven_features.utils.models import PipelineConfig
 from raven_features.utils.logs import get_logger
 
 
@@ -18,211 +20,91 @@ logger = get_logger(__name__)
 
 
 # ----------------------------
-# PROJECT PARAMETERS MODEL
-# ----------------------------
-class ProjectParameters(BaseModel):
-    email: EmailStr
-    project_id: str
-    feature_group_id: str
-
-
-# ----------------------------
-# AUTOSCALER PARAMETERS MODEL
-# ----------------------------
-class AutoscalerParameters(BaseModel):
-    launcher_queue: str
-
-
-# ----------------------------
-# RAVEN QUERY PARAMETERS MODEL
-# ----------------------------
-
-class ImageParameters(BaseModel):
-    provenance: str
-
-
-class MaskParameters(BaseModel):
-    mask_type: str
-    provenance: str
-
-
-class RavenQueryParameters(BaseModel):
-    modality: Literal["radiology", "pathology"]
-
-    # Universal query parameters
-    dataset_id: Optional[Union[str, List[str]]] = None
-    clinical_id: Optional[str] = None
-    ingestion_id: Optional[str] = None
-
-    # New flexible image & mask parameters
-    images: Optional[ImageParameters] = None
-    masks: Optional[List[MaskParameters]] = None
-
-    @model_validator(mode="after")
-    def at_least_one_id(cls, model: "RavenQueryParameters"):
-        if not (model.dataset_id or model.clinical_id or model.ingestion_id):
-            raise ValueError("At least one of dataset_id, clinical_id, or ingestion_id must be provided.")
-        return model
-
-
-# ----------------------------
-# PIPELINE STEPS MODEL
-# ----------------------------
-class PipelineStep(BaseModel):
-    name: str
-    repo: str
-    branch: str
-    working_directory: str
-    commit: str
-    script: str
-    output_path: Optional[str] = None
-    execution_queue: str
-    parent_steps: List[str] = []
-    time_limit: int
-
-    @field_validator("time_limit")
-    @classmethod
-    def positive_time_limit(cls, v):
-        if v <= 0:
-            raise ValueError("time_limit must be positive")
-        return v
-
-
-# ----------------------------
-# ROOT PIPELINE CONFIG MODEL
-# ----------------------------
-class PipelineConfig(BaseModel):
-    config_name: Optional[str] = None
-    batch_id: Optional[str] = None
-    series_uid: Optional[str] = None
-
-    project_parameters: ProjectParameters
-    autoscaler_parameters: AutoscalerParameters
-    raven_query_parameters: RavenQueryParameters
-    pipeline_steps: List[PipelineStep]
-
-    @field_validator("pipeline_steps")
-    @classmethod
-    def validate_pipeline_steps_exist(cls, v):
-        if not v:
-            raise ValueError("pipeline_steps must contain at least one step")
-        return v
-
-
-# ----------------------------
-# Config Retrieval Functions
+# Config Processing
 # ----------------------------
 def process_config_yaml(yaml_content: str) -> dict:
-    """
-    Parses a YAML string and returns the corresponding dictionary.
-    """
     return yaml.safe_load(StringIO(yaml_content))
 
-def load_config(config_path_or_uri: str) -> tuple[dict, str]:
-    """
-    General-purpose loader that handles both S3 and local config files.
 
-    Returns:
-        Tuple of (parsed_dict, raw_yaml_string)
+def get_config_name(source: Optional[str]) -> Optional[str]:
+    if source is None:
+        return None
+    if source.startswith("s3://"):
+        return Path(urlparse(source).path).stem
+    return Path(source).stem
+
+
+def read_config_content(
+    *,
+    config_path: Optional[str] = None,
+    config_uri: Optional[str] = None,
+    yaml_content: Optional[str] = None
+) -> tuple[str, Optional[str]]:
     """
-    if config_path_or_uri.startswith("s3://"):
-        yaml_content = retrieve_s3_file(config_path_or_uri)
+    Resolves the config content from one of three sources.
+    Returns: (yaml_content_str, source_reference)
+    """
+    if sum(x is not None for x in [config_path, config_uri, yaml_content]) != 1:
+        raise ValueError("Must provide exactly one of config_path, config_uri, or yaml_content")
+
+    if config_path:
+        return retrieve_local_file(config_path), config_path
+    elif config_uri:
+        return retrieve_s3_file(config_uri), config_uri
     else:
-        yaml_content = retrieve_local_file(config_path_or_uri)
+        return yaml_content, None
 
-    config_dict = process_config_yaml(yaml_content)
-    return config_dict, yaml_content
 
-# ----------------------------
-# Model Manipulation Functions
-# ----------------------------
-def flatten_config(model: BaseModel, prefix: str = "") -> dict[str, Any]:
+def load_config(
+    *,
+    config_path: Optional[str] = None,
+    config_uri: Optional[str] = None,
+    yaml_content: Optional[str] = None
+) -> PipelineConfig:
     """
-    Recursively flattens nested Pydantic models into a flat dictionary with dot-notated keys.
-    Lists of models are flattened with index-based keys (e.g., steps.0.name).
+    Loads a config from local path, S3 URI, or raw YAML.
+    Returns a validated PipelineConfig model.
     """
-    flat = {}
+    content, source = read_config_content(
+        config_path=config_path,
+        config_uri=config_uri,
+        yaml_content=yaml_content,
+    )
 
-    for name, value in model.model_dump(exclude_none=True).items():
-        key = f"{prefix}.{name}" if prefix else name
+    config_dict = process_config_yaml(content)
 
-        if isinstance(value, BaseModel):
-            flat.update(flatten_config(value, prefix=key))
+    # Add metadata before model validation
+    config_dict.update({
+        "config_path": source,
+        "config_name": get_config_name(source),
+        "batch_id": datetime.now().strftime("%Y-%m-%d__%H-%M-%S"),
+        "yaml_content": content,
+    })
 
-        elif isinstance(value, list):
-            if all(isinstance(i, BaseModel) for i in value):
-                for idx, item in enumerate(value):
-                    flat.update(flatten_config(item, prefix=f"{key}.{idx}"))
-            else:
-                flat[key] = value  # Let non-BaseModel lists pass through
-
-        elif isinstance(value, dict):
-            for sub_key, sub_val in value.items():
-                flat[f"{key}.{sub_key}"] = sub_val
-
-        else:
-            flat[key] = value
-
-    return flat
-
-
-def unflatten_config(
-    params: dict[str, Any],
-    model_class: type[BaseModel],
-    prefix: str = "General/"
-) -> BaseModel:
-    """
-    Reconstructs a nested Pydantic model from flattened ClearML parameters.
-    """
-    nested = {}
-
-    for full_key, value in params.items():
-        if prefix and not full_key.startswith(prefix):
-            continue
-
-        key = full_key[len(prefix):] if prefix else full_key
-
-        # Parse stringified lists/dicts if needed
-        if isinstance(value, str) and value.strip().startswith(("{", "[")):
-            try:
-                value = ast.literal_eval(value)
-            except Exception:
-                pass
-
-        # Convert dotted key into nested dict structure
-        parts = key.split(".")
-        d = nested
-        for part in parts[:-1]:
-            d = d.setdefault(part, {})
-        d[parts[-1]] = value
-
-    return model_class.model_validate(nested)
+    return PipelineConfig(**config_dict)
 
 
 # ----------------------------
 # Config Logging Functions
 # ----------------------------
-def log_model_parameters(task, model: BaseModel, section_name: str = None):
+def set_task_parameters_from_config(task: Task, config: PipelineConfig) -> None:
     """
-    Logs all fields from a Pydantic model to the ClearML task parameters.
-
-    Args:
-        task: A ClearML Task instance.
-        model: A Pydantic BaseModel instance.
-        section_name: Optional section prefix to group parameters.
+    Sets ClearML parameters using model_dump() of each submodel in the PipelineConfig.
     """
-    flat_params = flatten_config(model)
-    param_prefix = f"{section_name or model.__class__.__name__}."
+    # Set flat sections
+    for section_name in ["project_parameters", "autoscaler_parameters", "raven_query_parameters"]:
+        section = getattr(config, section_name)
+        task.set_parameters_as_dict({f"{section_name}.{k}": str(v) for k, v in section.model_dump().items()})
 
-    for k, v in flat_params.items():
-        if isinstance(v, (dict, list)):
-            v = str(v)
-        task.set_parameter(f"{param_prefix}{k}", v)
+    # Set pipeline steps
+    for idx, step in enumerate(config.pipeline_steps):
+        step_params = {f"pipeline_steps[{idx}].{k}": str(v) for k, v in step.model_dump().items()}
+        task.set_parameters_as_dict(step_params)
 
 
-def log_pipeline_config_to_clearml(task: Task, config: PipelineConfig):
+def log_pipeline_config_to_console(config: PipelineConfig) -> None:
     """
-    Pretty-logs and sets ClearML parameters from a PipelineConfig model.
+    Pretty-logs PipelineConfig details for CLI visibility.
     """
     logger.info('--------------------------------------------------')
     logger.info(" PxPipeline Featurization            ,_")
@@ -233,26 +115,20 @@ def log_pipeline_config_to_clearml(task: Task, config: PipelineConfig):
     logger.info(f' Project ID: {config.project_parameters.project_id} ')
     logger.info('--------------------------------------------------\n')
 
-    # Log project, autoscaler, and query params
     for section_name in ["project_parameters", "autoscaler_parameters", "raven_query_parameters"]:
         section = getattr(config, section_name)
         logger.info(f"{section_name.replace('_', ' ').title()}:")
         logger.info('--------------------------------------------------')
         for k, v in section.model_dump().items():
             logger.info(f"  {k:<25}: {v}")
-            task.set_parameter(f"{section_name}.{k}", str(v))
         logger.info('--------------------------------------------------\n')
 
-    # Log pipeline steps with clearer formatting
     logger.info("Pipeline Steps:")
     logger.info('--------------------------------------------------')
     for idx, step in enumerate(config.pipeline_steps):
         logger.info(f"  Step {idx + 1}: {step.name}")
         for k, v in step.model_dump().items():
-            if k == "name":
-                continue  # Already printed above
-            logger.info(f"    {k:<20}: {v}")
-            task.set_parameter(f"pipeline_steps[{idx}].{k}", str(v))
+            if k != "name":
+                logger.info(f"    {k:<20}: {v}")
         logger.info("")
-
     logger.info('--------------------------------------------------\n\n')

@@ -39,6 +39,7 @@ def validate_mutex_args(*mutex_args):
         return wrapper
     return decorator
 
+
 def validate_mutex_groups(*groups):
     """
     Decorator to validate that arguments from only one group are truthy.
@@ -74,8 +75,6 @@ def require_at_least_one(*required_keys):
             return func(*args, **kwargs)
         return wrapper
     return decorator
-
-
 
 
 def validate_required_args(*required_keys):

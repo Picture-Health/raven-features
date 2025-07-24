@@ -10,8 +10,8 @@ This script is triggered by a parent job and is responsible for:
 from clearml import PipelineController, Task
 from datetime import datetime, timezone
 
-from raven_features.utils.config import PipelineStep
-from raven_features.utils.clearml import parse_clearml_params, build_clearml_params
+from raven_features.utils.config import load_config, set_task_parameters_from_config
+from raven_features.utils.models import  PipelineStep
 from raven_features.utils.logs import get_logger
 from raven_features.utils import env
 
@@ -58,30 +58,24 @@ def main():
 
     # Current ClearML task (i.e. the pipeline job)
     task = Task.current_task()
-    params = task.get_parameters()
-    env_tags = task.get_tags()
-
-    # Restore nested config from flattened params
-    config = parse_clearml_params(params, section="General")
-    config_name = config.config_name
-    batch_id = config.batch_id
-    series_uid = config.series_uid
+    tags = task.get_tags()
+    config = load_config(yaml_content=task.artifacts[env.CONFIG_ARTIFACT_NAME].get())
 
     logger.info(f' Project ID: {config.project_parameters.project_id} ')
     logger.info('--------------------------------------------------\n')
     logger.info("📌 Pipeline Parameters:")
     logger.info('--------------------------------------------------')
-    logger.info(f"       - Config Name: {config_name}")
-    logger.info(f"       - Batch ID: {batch_id}")
-    logger.info(f"       - Series UID: {series_uid}")
-    logger.info(f"       - Tags: {env_tags}")
+    logger.info(f"       - Config Name: {config.config_name}")
+    logger.info(f"       - Batch ID: {config.batch_id}")
+    logger.info(f"       - Series UID: {config.series_uid}")
+    logger.info(f"       - Tags: {tags}")
     logger.info("")
 
     # Construct ClearML project path
     project_name = "/".join([
         env.PROJECT_PREFIX,
         config.project_parameters.project_id,
-        f"{config_name}-{batch_id}"
+        f"{config.config_name}-{config.batch_id}"
     ])
 
     # Register each step as a ClearML task
@@ -104,9 +98,8 @@ def main():
             commit=step.commit,
             script=step.script,
         )
-        step_params = build_clearml_params(config, config_name, batch_id, series_uid)
-        step_task.connect(step_params)
-        step_task.add_tags(env_tags)
+        set_task_parameters_from_config(step_task, config)
+        step_task.add_tags(tags)
 
         pipeline.add_step(
             name=step.name,
