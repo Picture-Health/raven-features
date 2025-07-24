@@ -27,3 +27,4 @@ PACKAGES = [
 # Storage Parameters
 ############################
 OUTPUT_BUCKET = 'px-app-bucket'
+LOCAL_FILESYSTEM_PREFIX = 'local-files/'
