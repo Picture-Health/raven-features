@@ -59,11 +59,26 @@ def load_config(
     *,
     config_path: Optional[str] = None,
     config_uri: Optional[str] = None,
-    yaml_content: Optional[str] = None
+    yaml_content: Optional[str] = None,
+    featurization_metadata: Optional[dict] = None,
 ) -> PipelineConfig:
     """
-    Loads a config from local path, S3 URI, or raw YAML.
-    Returns a validated PipelineConfig model.
+    Loads a config from a local path, S3 URI, or raw YAML string.
+
+    Args:
+        config_path (str, optional): Local file path to the YAML config.
+        config_uri (str, optional): S3 URI to the YAML config.
+        yaml_content (str, optional): Raw YAML string.
+        featurization_metadata (dict, optional): Optional metadata to inject into
+            the config before validation. If not provided, the following defaults
+            will be added:
+                - 'config_path': inferred from path or URI
+                - 'config_name': derived from filename
+                - 'batch_id': current timestamp
+                - 'yaml_content': full raw YAML string
+
+    Returns:
+        PipelineConfig: Validated config model with metadata injected.
     """
     content, source = read_config_content(
         config_path=config_path,
@@ -73,13 +88,15 @@ def load_config(
 
     config_dict = process_config_yaml(content)
 
-    # Add metadata before model validation
-    config_dict.update({
-        "config_path": source,
-        "config_name": get_config_name(source),
-        "batch_id": datetime.now().strftime("%Y-%m-%d__%H-%M-%S"),
-        "yaml_content": content,
-    })
+    if featurization_metadata is None:
+        featurization_metadata = {
+            "config_path": source,
+            "config_name": get_config_name(source),
+            "batch_id": datetime.now().strftime("%Y-%m-%d__%H-%M-%S"),
+            "yaml_content": content,
+        }
+
+    config_dict.update(featurization_metadata)
 
     return PipelineConfig(**config_dict)
 

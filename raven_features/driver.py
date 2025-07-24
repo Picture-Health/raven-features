@@ -59,7 +59,17 @@ def main():
     # Current ClearML task (i.e. the pipeline job)
     task = Task.current_task()
     tags = task.get_tags()
-    config = load_config(yaml_content=task.artifacts[env.CONFIG_ARTIFACT_NAME].get())
+    config_artifact = task.artifacts[env.CONFIG_ARTIFACT_NAME].get()
+    config = load_config(
+        yaml_content=config_artifact,
+        featurization_metadata={
+            "config_path": task.get_parameter('config_path'),
+            "config_name": task.get_parameter('config_name'),
+            "batch_id": task.get_parameter('batch_id'),
+            "series_uid": task.get_parameter('series_uid'),
+            "yaml_content": config_artifact
+        }
+    )
 
     logger.info(f' Project ID: {config.project_parameters.project_id} ')
     logger.info('--------------------------------------------------\n')
