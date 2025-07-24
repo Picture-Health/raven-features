@@ -61,7 +61,7 @@ def construct_s3_key(filename: str, config: PipelineConfig) -> str:
     key = '/'.join([
         config.project_parameters.email,
         config.batch_id,
-        config.series_uid
+        config.series_uid,
         filename
     ])
     return key
