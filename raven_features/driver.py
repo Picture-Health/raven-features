@@ -56,6 +56,8 @@ def main():
     task = Task.current_task()
     tags = task.get_tags()
     config_artifact = task.artifacts[env.CONFIG_ARTIFACT_NAME].get()
+    params = task.get_parameters_as_dict()
+    print(params)
     config = load_config(
         yaml_content=config_artifact,
         featurization_metadata={
