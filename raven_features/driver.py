@@ -26,16 +26,13 @@ logger = get_logger(__name__)
 # Functions
 ############################
 def status_change_callback(pipeline, node, prev_status):
-    """
-    Custom callback to update task start time metadata
-    once ClearML begins execution of the task.
-    """
-    if node.job.task.status in (
-            Task.TaskStatusEnum.created,
-            Task.TaskStatusEnum.queued,
-            Task.TaskStatusEnum.in_progress
+    from datetime import datetime, timezone
+    if (
+        node.job.task.status == Task.TaskStatusEnum.created
+        or node.job.task.status == Task.TaskStatusEnum.queued
+        or node.job.task.status == Task.TaskStatusEnum.in_progress
     ) and not node.job.task.data.started:
-        node.job.task.data.started = datetime.now().astimezone(timezone.utc)
+        node.job.task.data.started = datetime.now().astimezone(timezone.utc)  # assuming utc timezone
 
 
 def main():
@@ -110,6 +107,10 @@ def main():
         )
         set_task_parameters(step_task, step=step, base=config)
         step_task.add_tags(tags)
+        step_task.upload_artifact(
+            name=env.CONFIG_ARTIFACT_NAME,
+            artifact_object=config.yaml_content
+        )
 
         pipeline.add_step(
             name=step.name,
