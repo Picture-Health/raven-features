@@ -142,10 +142,13 @@ def collect_output_paths_from_ancestors(
     return sorted(set(output_paths))
 
 
-def set_parameters_from_model(task: Task, model: BaseModel, prefix: Optional[str] = None) -> None:
+def collect_parameters_from_model(
+    model: BaseModel, prefix: Optional[str] = None
+) -> dict[str, str]:
     """
-    Recursively sets parameters on a ClearML Task from a nested Pydantic model.
+    Recursively collects parameters from a nested Pydantic model.
     """
+    params = {}
     for field_name, field in model.model_fields.items():
         value = getattr(model, field_name)
         if value is None:
@@ -155,12 +158,13 @@ def set_parameters_from_model(task: Task, model: BaseModel, prefix: Optional[str
         full_key = f"{key_prefix}{field_name}"
 
         if isinstance(value, BaseModel):
-            set_parameters_from_model(task, value, prefix=full_key)
+            params.update(collect_parameters_from_model(value, prefix=full_key))
         elif isinstance(value, list) and value and isinstance(value[0], BaseModel):
             for i, item in enumerate(value):
-                set_parameters_from_model(task, item, prefix=f"{full_key}[{i}]")
+                params.update(collect_parameters_from_model(item, prefix=f"{full_key}[{i}]"))
         else:
-            task.set_parameter(full_key, str(value))
+            params[full_key] = str(value)
+    return params
 
 
 def set_task_parameters(
@@ -172,36 +176,25 @@ def set_task_parameters(
 ) -> None:
     """
     Sets ClearML parameters from a PipelineConfig or a single PipelineStep.
-
-    Args:
-        task: ClearML Task object.
-        config: Full PipelineConfig instance.
-        step: A single PipelineStep instance.
-        base: Optional full PipelineConfig to pull base-level parameters from
-              when setting params for a single PipelineStep.
-
-    You must provide exactly one of `config` or `step`.
-
-    Behavior:
-        - If `config` is provided, sets all parameters with nested prefixes.
-        - If `step` is provided, sets that step’s parameters unprefixed.
-          If `base` is also provided, includes project/autoscaler/raven sections
-          prefixed accordingly.
     """
     if (config is None) == (step is None):
         raise ValueError("You must provide exactly one of `config` or `step`.")
 
+    all_params = {}
+
     if config:
-        set_parameters_from_model(task, config)
+        all_params.update(collect_parameters_from_model(config))
         for idx, step in enumerate(config.pipeline_steps or []):
-            set_parameters_from_model(task, step, prefix=f"pipeline_steps[{idx}]")
+            all_params.update(collect_parameters_from_model(step, prefix=f"pipeline_steps[{idx}]"))
     else:
         if base:
             for section_name in ["project_parameters", "autoscaler_parameters", "raven_query_parameters"]:
                 section = getattr(base, section_name, None)
                 if section:
-                    set_parameters_from_model(task, section, prefix=section_name)
-        set_parameters_from_model(task, step)
+                    all_params.update(collect_parameters_from_model(section, prefix=section_name))
+        all_params.update(collect_parameters_from_model(step))
+
+    task.set_parameters(all_params)
 
 
 # ----------------------------

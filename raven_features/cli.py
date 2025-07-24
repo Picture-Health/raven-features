@@ -42,7 +42,7 @@ def launch_pipeline(config: PipelineConfig) -> dict:
     )
 
     # Set parameters, tags and config artifact to pipeline controller task
-    set_task_parameters_from_config(pipeline.task, config)
+    set_task_parameters(pipeline.task, config=config)
     pipeline.task.set_tags([
         f"project_id:{config.project_parameters.project_id}",
         f"job_id:{config.series_uid}",
