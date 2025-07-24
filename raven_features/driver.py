@@ -10,7 +10,7 @@ This script is triggered by a parent job and is responsible for:
 from clearml import PipelineController, Task
 from datetime import datetime, timezone
 
-from raven_features.utils.config import load_config, set_task_parameters_from_config
+from raven_features.utils.config import load_config, set_task_parameters
 from raven_features.utils.models import  PipelineStep
 from raven_features.utils.logs import get_logger
 from raven_features.utils import env
@@ -108,7 +108,7 @@ def main():
             commit=step.commit,
             script=step.script,
         )
-        set_task_parameters_from_config(step_task, config)
+        set_task_parameters(step_task, step=step, base=config)
         step_task.add_tags(tags)
 
         pipeline.add_step(
