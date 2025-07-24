@@ -21,3 +21,9 @@ PACKAGES = [
     "email-validator==2.2.0",
     "pydantic==2.11.7"
 ]
+
+
+############################
+# Storage Parameters
+############################
+OUTPUT_BUCKET = 'px-app-bucket'

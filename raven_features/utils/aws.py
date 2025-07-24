@@ -1,7 +1,16 @@
 import boto3
 
+from io import BytesIO
 from urllib.parse import urlparse
 
+from raven_features.utils import env
+from raven_features.utils.models import PipelineConfig
+from raven_features.utils.logs import get_logger
+
+############################
+# Globals
+############################
+logger = get_logger(__name__)
 
 ############################
 # Functions
@@ -45,3 +54,53 @@ def parse_s3_uri(s3_uri: str) -> tuple[str, str]:
     """
     parsed = urlparse(s3_uri)
     return parsed.netloc, parsed.path.lstrip("/")
+
+
+def construct_s3_key(filename: str, config: PipelineConfig) -> str:
+    """Constructs an S3 key using PipelineConfig metadata."""
+    key = '/'.join([
+        config.project_parameters.email,
+        config.batch_id,
+        config.job_id,
+        filename
+    ])
+    return key
+
+
+def upload_s3_file(
+    file_content: BytesIO,
+    filename: str,
+    config: PipelineConfig,
+    content_type: str = "application/gzip",
+    bucket: str = "px-app-bucket"
+) -> str:
+    """
+    Uploads a file-like object (e.g., BytesIO) to S3 using metadata from a PipelineConfig.
+
+    Args:
+        file_content: File-like object supporting .seek() and .read().
+        filename: Name of the file to store in S3.
+        config: PipelineConfig object with project/user metadata.
+        content_type: MIME type of the file. Default is gzip.
+        bucket: S3 bucket to upload to.
+
+    Returns:
+        The full S3 URI of the uploaded file.
+    """
+    s3 = boto3.client("s3")
+    key = construct_s3_key(filename, config=config)
+
+    try:
+        file_content.seek(0)
+        s3.put_object(
+            Bucket=bucket,
+            Key=key,
+            Body=file_content,
+            ContentType=content_type
+        )
+        uri = f"s3://{bucket}/{key}"
+        logger.info(f"✅ Uploaded {filename} to {uri}")
+        return uri
+    except Exception as e:
+        logger.exception(f"❌ Failed to upload {filename} to S3")
+        raise

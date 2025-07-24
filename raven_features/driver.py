@@ -8,7 +8,6 @@ This script is triggered by a parent job and is responsible for:
 """
 
 from clearml import PipelineController, Task
-from datetime import datetime, timezone
 
 from raven_features.utils.config import load_config, set_task_parameters
 from raven_features.utils.models import  PipelineStep
