@@ -1,4 +1,3 @@
-import json
 import yaml
 
 from clearml import Task

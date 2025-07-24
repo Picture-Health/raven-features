@@ -4,7 +4,7 @@ from clearml import PipelineController, Task
 
 from raven_features.utils.config import (
     load_config,
-    set_task_parameters_from_config,
+    set_task_parameters,
     log_pipeline_config_to_console,
     PipelineConfig,
 )
@@ -88,7 +88,7 @@ def featurize(config_uri, config_local_path):
         task_name=f"Featurization - {config.config_name} @ {formatted_date()}",
         task_type=Task.TaskTypes.data_processing
     )
-    set_task_parameters_from_config(task, config)
+    set_task_parameters(task, config=config)
     task.upload_artifact(
         name=env.CONFIG_ARTIFACT_NAME,
         artifact_object=config.yaml_content
