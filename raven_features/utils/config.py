@@ -154,8 +154,7 @@ def collect_parameters_from_model(
         if value is None:
             continue
 
-        key_prefix = f"{prefix}." if prefix else ""
-        full_key = f"{key_prefix}{field_name}"
+        full_key = f"{prefix}.{field_name}" if prefix else field_name
 
         if isinstance(value, BaseModel):
             params.update(collect_parameters_from_model(value, prefix=full_key))
@@ -164,6 +163,22 @@ def collect_parameters_from_model(
                 params.update(collect_parameters_from_model(item, prefix=f"{full_key}[{i}]"))
         else:
             params[full_key] = str(value)
+    return params
+
+
+def collect_flat_non_model_fields(model: BaseModel) -> dict[str, str]:
+    """
+    Collects only the top-level scalar (non-model) fields from a Pydantic model.
+    """
+    params = {}
+    for field_name, field in model.model_fields.items():
+        value = getattr(model, field_name)
+        if (
+            value is not None
+            and not isinstance(value, BaseModel)
+            and not (isinstance(value, list) and value and isinstance(value[0], BaseModel))
+        ):
+            params[field_name] = str(value)
     return params
 
 
@@ -188,10 +203,9 @@ def set_task_parameters(
             all_params.update(collect_parameters_from_model(step, prefix=f"pipeline_steps[{idx}]"))
     else:
         if base:
-            for section_name in ["project_parameters", "autoscaler_parameters", "raven_query_parameters"]:
-                section = getattr(base, section_name, None)
-                if section:
-                    all_params.update(collect_parameters_from_model(section, prefix=section_name))
+            # Grab top-level scalar fields only
+            all_params.update(collect_flat_non_model_fields(base))
+        # Add the actual step fields
         all_params.update(collect_parameters_from_model(step))
 
     task.set_parameters(all_params)
