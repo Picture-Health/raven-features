@@ -29,6 +29,19 @@ def retrieve_s3_file(s3_uri: str) -> str:
     return obj["Body"].read().decode("utf-8")
 
 
+def download_s3_file(s3_uri: str, local_path: str) -> None:
+    """
+    Downloads a file from S3 to a local path.
+    """
+    if not s3_uri.startswith("s3://"):
+        raise ValueError("Invalid S3 URI")
+
+    s3 = boto3.client("s3")
+    _, _, bucket_and_key = s3_uri.partition("s3://")
+    bucket, _, key = bucket_and_key.partition("/")
+    s3.download_file(Bucket=bucket, Key=key, Filename=local_path)
+
+
 def list_existing_files_in_s3(s3_paths: list[str]) -> list[str]:
     """
     For each S3 prefix in `s3_paths`, checks if any files exist under that prefix.
