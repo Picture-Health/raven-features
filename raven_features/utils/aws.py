@@ -60,6 +60,7 @@ def construct_s3_key(filename: str, config: PipelineConfig) -> str:
     """Constructs an S3 key using PipelineConfig metadata."""
     key = '/'.join([
         config.project_parameters.email,
+        config.project_parameters.feature_group_id,
         config.batch_id,
         config.series_uid,
         filename
