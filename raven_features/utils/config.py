@@ -106,17 +106,44 @@ def load_config(
 # ----------------------------
 def set_task_parameters_from_config(task: Task, config: PipelineConfig) -> None:
     """
-    Sets ClearML parameters using model_dump() of each submodel in the PipelineConfig.
+    Sets ClearML parameters using model_dump() of each section in the PipelineConfig.
+
+    - Nested submodels (project_parameters, autoscaler_parameters, raven_query_parameters)
+      are logged with dot-prefixed keys.
+    - Pipeline steps are logged as indexed dictionaries.
+    - Any base-level parameters (e.g., batch_id, config_name) are logged at top-level.
     """
-    # Set flat sections
+    full_dump = config.model_dump()
+
+    # Track which keys we've already handled
+    handled_keys = set()
+
+    # Set known nested sections
     for section_name in ["project_parameters", "autoscaler_parameters", "raven_query_parameters"]:
         section = getattr(config, section_name)
-        task.set_parameters_as_dict({f"{section_name}.{k}": str(v) for k, v in section.model_dump().items()})
+        if section is not None:
+            section_dict = section.model_dump()
+            task.set_parameters_as_dict({
+                f"{section_name}.{k}": str(v) for k, v in section_dict.items()
+            })
+            handled_keys.add(section_name)
 
     # Set pipeline steps
-    for idx, step in enumerate(config.pipeline_steps):
-        step_params = {f"pipeline_steps[{idx}].{k}": str(v) for k, v in step.model_dump().items()}
-        task.set_parameters_as_dict(step_params)
+    if config.pipeline_steps:
+        for idx, step in enumerate(config.pipeline_steps):
+            step_params = {
+                f"pipeline_steps[{idx}].{k}": str(v)
+                for k, v in step.model_dump().items()
+            }
+            task.set_parameters_as_dict(step_params)
+        handled_keys.add("pipeline_steps")
+
+    # Log base-level parameters
+    base_level_params = {
+        k: str(v) for k, v in full_dump.items()
+        if k not in handled_keys
+    }
+    task.set_parameters_as_dict(base_level_params)
 
 
 def log_pipeline_config_to_console(config: PipelineConfig) -> None:
