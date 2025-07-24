@@ -40,7 +40,7 @@ class RavenQueryParameters(BaseModel):
     ingestion_id: Optional[str] = None
 
     # New flexible image & mask parameters
-    images: Optional[ImageParameters] = None
+    images: Optional[List[ImageParameters]] = None
     masks: Optional[List[MaskParameters]] = None
 
     @model_validator(mode="after")
