@@ -3,7 +3,6 @@ import boto3
 from io import BytesIO
 from urllib.parse import urlparse
 
-from raven_features.utils import env
 from raven_features.utils.models import PipelineConfig
 from raven_features.utils.logs import get_logger
 
