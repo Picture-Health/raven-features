@@ -56,15 +56,15 @@ def main():
     task = Task.current_task()
     tags = task.get_tags()
     config_artifact = task.artifacts[env.CONFIG_ARTIFACT_NAME].get()
-    params = task.get_parameters_as_dict()
-    print(params)
+    controller_params = task.get_parameters_as_dict()['General']
+
     config = load_config(
         yaml_content=config_artifact,
         featurization_metadata={
-            "config_path": task.get_parameter('config_path'),
-            "config_name": task.get_parameter('config_name'),
-            "batch_id": task.get_parameter('batch_id'),
-            "series_uid": task.get_parameter('series_uid'),
+            "config_path": controller_params['config_path'],
+            "config_name": controller_params['config_name'],
+            "batch_id": controller_params['batch_id'],
+            "series_uid": controller_params['series_uid'],
             "yaml_content": config_artifact
         }
     )
