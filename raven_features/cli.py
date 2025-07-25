@@ -118,12 +118,10 @@ def featurize(config_uri, config_local_path):
 
     # Step 5: Trigger pipelines
     logger.info("🚀 Launching featurization pipelines...")
-    debug_counter = 0
     for series_uid in trigger_set:
-        if debug_counter < 3:
-            config.series_uid = series_uid
-            launch_pipeline(config=config)
-            debug_counter += 1
+        config.series_uid = series_uid
+        launch_pipeline(config=config)
+        debug_counter += 1
     logger.info("✅ Featurization pipelines successfully triggered.")
 
 
