@@ -65,9 +65,9 @@ def launch_pipeline(config: PipelineConfig) -> dict:
 ############################
 # Featurization CLI
 ############################
-# @click.command()
-# @click.option('--config-uri', default=None, help='S3 URI to a pipeline configuration YAML file')
-# @click.option('--config-local-path', default=None, type=click.Path(exists=True), help='Local path to a pipeline configuration YAML file')
+@click.command()
+@click.option('--config-uri', default=None, help='S3 URI to a pipeline configuration YAML file')
+@click.option('--config-local-path', default=None, type=click.Path(exists=True), help='Local path to a pipeline configuration YAML file')
 def featurize(config_uri, config_local_path):
     """
     Loads the pipeline config from either S3 or local path and runs the featurization pipeline.
@@ -125,8 +125,8 @@ def featurize(config_uri, config_local_path):
 
 
 
-if __name__ == "__main__":
-    featurize(
-        config_uri=None, #'s3://px-app-bucket/config/eng-test.yaml',
-        config_local_path='../config/omid.yaml'
-    )
+# if __name__ == "__main__":
+#     featurize(
+#         config_uri=None, #'s3://px-app-bucket/config/eng-test.yaml',
+#         config_local_path='../config/omid.yaml'
+#     )
