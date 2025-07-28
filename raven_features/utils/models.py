@@ -49,6 +49,9 @@ class RavenQueryParameters(BaseModel):
             raise ValueError("At least one of dataset_id, clinical_id, or ingestion_id must be provided.")
         return model
 
+    class Config:
+        extra = "allow"
+
 
 # ----------------------------
 # PIPELINE STEPS MODEL
