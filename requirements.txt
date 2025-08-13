@@ -3,4 +3,5 @@ clearml==1.18.0
 boto3>=1.34.0
 email-validator==2.2.0
 pydantic==2.11.7
-raven @ git+https://github.com/Picture-Health/raven.git
+raven @ git+https://github.com/Picture-Health/raven.git@9dc135c9fbf8308eda546384fa364151c92e4883
+
