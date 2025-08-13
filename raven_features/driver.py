@@ -13,7 +13,7 @@ from raven_features.utils.config import load_config, set_task_parameters
 from raven_features.utils.models import  PipelineStep
 from raven_features.utils.logs import get_logger
 from raven_features.utils import env
-
+from raven_features.utils.aws import retrieve_s3_file
 
 ############################
 # Globals
@@ -55,8 +55,8 @@ def main():
     # Current ClearML task (i.e. the pipeline job)
     task = Task.current_task()
     tags = task.get_tags()
-    config_artifact = task.artifacts[env.CONFIG_ARTIFACT_NAME].get()
     parent_params = task.get_parameters_as_dict()['General']
+    config_artifact = retrieve_s3_file(parent_params['config_path'])
 
     config = load_config(
         yaml_content=config_artifact,
