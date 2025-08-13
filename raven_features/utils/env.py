@@ -9,7 +9,7 @@ CONFIG_ARTIFACT_NAME = 'config_yaml'
 # Driver Entrypoint
 ############################
 ENTRYPOINT_REPO = "https://github.com/Picture-Health/raven-features.git"
-ENTRYPOINT_BRANCH = "fix/ENG-1080"
+ENTRYPOINT_BRANCH = "main"
 ENTRYPOINT_SCRIPT = "raven_features/driver.py"
 WORKING_DIR = "."
 PACKAGES = [
