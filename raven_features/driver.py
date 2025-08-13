@@ -56,7 +56,7 @@ def main():
     task = Task.current_task()
     tags = task.get_tags()
     parent_params = task.get_parameters_as_dict()['General']
-    config_artifact = retrieve_s3_file(['config_path'])
+    config_artifact = retrieve_s3_file(parent_params['config_path'])
 
     config = load_config(
         yaml_content=config_artifact,
