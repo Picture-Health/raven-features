@@ -3,6 +3,7 @@
 ############################
 PROJECT_PREFIX = "RAVEN-FEATURES"
 CONFIG_ARTIFACT_NAME = 'config_yaml'
+CLEARML_LAUNCHER_QUEUE = 'PxPipeline_Launcher_gcp'
 
 
 ############################
@@ -10,7 +11,7 @@ CONFIG_ARTIFACT_NAME = 'config_yaml'
 ############################
 ENTRYPOINT_REPO = "https://github.com/Picture-Health/raven-features.git"
 ENTRYPOINT_BRANCH = "main"
-ENTRYPOINT_SCRIPT = "raven_features/driver.py"
+ENTRYPOINT_SCRIPT = "src/raven_features/entrypoint.py"
 WORKING_DIR = "."
 PACKAGES = [
     "numpy==1.26.4",
@@ -21,10 +22,3 @@ PACKAGES = [
     "email-validator==2.2.0",
     "pydantic==2.11.7"
 ]
-
-
-############################
-# Storage Parameters
-############################
-OUTPUT_BUCKET = 'px-app-bucket'
-LOCAL_FILESYSTEM_PREFIX = 'local-files/'
