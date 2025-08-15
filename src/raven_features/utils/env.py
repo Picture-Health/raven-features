@@ -11,8 +11,8 @@ CLEARML_LAUNCHER_QUEUE = 'PxPipeline_Launcher_gcp'
 ############################
 ENTRYPOINT_REPO = "https://github.com/Picture-Health/raven-features.git"
 ENTRYPOINT_BRANCH = "main"
-ENTRYPOINT_SCRIPT = "src/raven_features/entrypoint.py"
-WORKING_DIR = "."
+ENTRYPOINT_SCRIPT = "raven_features/entrypoint.py"
+WORKING_DIR = "src"
 PACKAGES = [
     "numpy==1.26.4",
     "boto3==1.35.62",
