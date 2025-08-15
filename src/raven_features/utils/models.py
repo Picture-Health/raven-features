@@ -167,11 +167,18 @@ ImageQuery = build_dynamic_model(
     extra_fields=("modality", "orientation"),          # ← allowlist for known non-column filters
 )
 
-MaskSpec = build_dynamic_model(
+# Query fields that actually hit Raven
+MaskQuery = build_dynamic_model(
     orm_classes=MaskORM,
     required={"mask_type": str, "provenance": str, "qa_code": str},
-    name="MaskSpec",
+    name="MaskQuery",
 )
+
+# YAML surface: alias + query
+class MaskSpec(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True, str_strip_whitespace=True)
+    alias: str
+    query: MaskQuery
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Core blocks

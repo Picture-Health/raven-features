@@ -24,16 +24,18 @@ def _mask_intersection_series(
 ) -> Set[str]:
     """
     Intersect series sets returned by multiple mask queries, all constrained by the same base image query.
+    Includes mask aliases in debug logs for clarity.
     """
     base = images.model_dump(exclude_none=True)
     all_sets: list[Set[str]] = []
 
     for i, m in enumerate(masks, 1):
-        q = {**base, **m.model_dump(exclude_none=True)}
-        logger.debug(f"[radiology] mask query {i}: {q}")
+        alias = getattr(m, "alias", None) or f"mask#{i}"
+        q = {**base, **m.query.model_dump(exclude_none=True)}  # note: use nested query
+        logger.debug(f"[radiology] mask query {i} ({alias}): {q}")
         results = rv.get_masks(**q)
         series = {res.series_uid for res in results}
-        logger.debug(f"[radiology] mask query {i}: {len(series)} series")
+        logger.debug(f"[radiology] mask query {i} ({alias}): {len(series)} matching series")
         all_sets.append(series)
 
     if not all_sets or any(len(s) == 0 for s in all_sets):
@@ -44,6 +46,7 @@ def _mask_intersection_series(
         raise ValueError("No overlapping series found across mask queries.")
     return inter
 
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Public API
 # ──────────────────────────────────────────────────────────────────────────────
@@ -51,19 +54,24 @@ def _mask_intersection_series(
 def get_radiology_series_set(images: ImageQuery, masks: Iterable[MaskSpec]) -> Set[str]:
     """
     Return the intersection of series UIDs for the given base image query and mask specs.
+    Logs mask aliases involved in the intersection.
     """
     masks = list(masks)
     if not masks:
         raise ValueError("No mask queries provided. Define at least one mask under provisioning.masks.")
+
+    # keep aliases for summary logging
+    aliases = [getattr(m, "alias", None) or f"mask#{i+1}" for i, m in enumerate(masks)]
     series = _mask_intersection_series(images, masks)
 
     logger.info('--------------------------------------------------')
-    logger.info(f"✅ Found {len(series)} radiology series at mask intersection")
+    logger.info(f"✅ Found {len(series)} radiology series at intersection of masks: {', '.join(aliases)}")
     for uid in sorted(series):
         logger.info(f"  Series UID: {uid}")
     logger.info('--------------------------------------------------')
 
     return series
+
 
 
 def get_pathology_slide_set(images: ImageQuery) -> Set[str]:

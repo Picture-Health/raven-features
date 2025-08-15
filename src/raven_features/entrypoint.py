@@ -135,17 +135,21 @@ def main() -> None:
         )
     )
 
-    # 6.1) Ensure the series base manifest exists (pointers only; no heavy copies)
+    # 6.1) Ensure the series manifest exists (pointers only; resolves masks; no heavy copies)
     try:
         bucket = _s3_bucket()
         prov = Provisioner(
             cfg,
-            BatchMeta(bucket=bucket, config_yaml=rt.yaml_content, batch_id=rt.batch_id or ""),
+            BatchMeta(
+                bucket=bucket,
+                config_yaml=config_yaml,  # <- use the artifact text you already loaded
+                batch_id=rt.batch_id or "",
+            ),
         )
-        uri = prov.ensure_series_base_manifest(series_uid=rt.series_uid, images=cfg.images)
-        logger.info(f"🧾 Series base manifest written to {uri}")
+        uri = prov.ensure_series_manifest(feat=feat, series_uid=rt.series_uid)  # <- masks + aliases
+        logger.info(f"🧾 Series manifest written to {uri}")
     except Exception as e:
-        logger.warning(f"Could not write series base manifest: {e!r}")
+        logger.warning(f"Could not write series manifest: {e!r}")
 
     # 7) Compose steps from featurization.extractions
     for ext in feat.extractions:
